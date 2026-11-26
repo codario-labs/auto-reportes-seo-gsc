@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local runtime data
+storage/
+storage-dev/
+data/
+apps/backend/storage/
+*.log
+npm-debug.log*
+
+# Branding: el logo oficial se añade localmente (ver branding/README.md)
+branding/*
+!branding/README.md
+!branding/.gitkeep
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Playwright
+test-results/
+playwright-report/
+
+# Artefactos locales de verificación con navegador
+.playwright-mcp/

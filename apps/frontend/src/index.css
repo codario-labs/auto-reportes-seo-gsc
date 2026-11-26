@@ -1,0 +1,122 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * Codario Labs — design tokens.
+ * El "chrome" es monocromo: el color se reserva para los datos (series de métricas)
+ * y para la identidad de cada market.
+ */
+:root {
+  --background: #f6f7f9;
+  --surface: #ffffff;
+  --surface-subtle: #fafafb;
+  --ink: #15171c;
+  --ink-2: #4a505c;
+  --muted: #858b97;
+  --line: #e4e6eb;
+  --line-strong: #d3d6dd;
+  --focus: #3557d4;
+  --focus-soft: #edf1fc;
+  --success: #1f7a4d;
+  --success-soft: #e9f4ee;
+  --warning: #a15c07;
+  --warning-soft: #fbf2e4;
+  --danger: #b42318;
+  --danger-soft: #fcedeb;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-subtle: var(--surface-subtle);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-focus: var(--focus);
+  --color-focus-soft: var(--focus-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --text-ui: 0.8125rem;
+  --text-ui--line-height: 1.25rem;
+  --text-title: 1.5rem;
+  --text-title--line-height: 2rem;
+  --text-title--letter-spacing: -0.02em;
+
+  --radius-control: 6px;
+  --radius-panel: 10px;
+  --radius-dialog: 14px;
+
+  --shadow-overlay: 0 12px 32px -12px rgb(21 23 28 / 0.22), 0 2px 6px -2px rgb(21 23 28 / 0.08);
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: rgb(53 87 212 / 0.16);
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(53 87 212 / 0.55);
+    outline-offset: 2px;
+  }
+
+  input[type="color"] {
+    -webkit-appearance: none;
+    appearance: none;
+    padding: 0;
+    border: none;
+    background: none;
+  }
+  input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 4px;
+  }
+  input[type="color"]::-moz-color-swatch {
+    border: none;
+    border-radius: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

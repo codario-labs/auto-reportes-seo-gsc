@@ -1,0 +1,325 @@
+// Codario Labs — SEO Report Generator
+// Esquema PostgreSQL gestionado con Prisma.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum MarketStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  EXPIRED
+  REVOKED
+  ERROR
+}
+
+enum PropertyType {
+  DOMAIN
+  URL_PREFIX
+}
+
+enum PeriodPreset {
+  LAST_7_DAYS
+  LAST_14_DAYS
+  LAST_28_DAYS
+  LAST_30_DAYS
+  LAST_3_MONTHS
+  LAST_6_MONTHS
+  LAST_12_MONTHS
+  PREVIOUS_WEEK
+  PREVIOUS_MONTH
+  CURRENT_MONTH
+  CUSTOM
+}
+
+enum ReportStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ReportStage {
+  QUEUED
+  FETCHING_DATA
+  PROCESSING_METRICS
+  COMPARING_PERIODS
+  GENERATING_INSIGHTS
+  RENDERING_PDF
+  COMPLETED
+}
+
+enum MetricKey {
+  CLICKS
+  IMPRESSIONS
+  CTR
+  POSITION
+}
+
+enum InsightSection {
+  EXECUTIVE_SUMMARY
+  PERFORMANCE_ANALYSIS
+  KEYWORD_ANALYSIS
+  PAGE_ANALYSIS
+  CTR_OPPORTUNITIES
+  OPPORTUNITIES
+  CONCLUSIONS
+  DATA_LIMITATIONS
+}
+
+enum RecommendationPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// ---------------------------------------------------------------------------
+// Configuración global (fila única, id = 1)
+// ---------------------------------------------------------------------------
+
+model AppSettings {
+  id                  Int          @id @default(1)
+  companyName         String       @default("Codario Labs") @db.VarChar(80)
+  /// Ruta relativa al directorio de almacenamiento del logo global subido.
+  globalLogoPath      String?      @db.VarChar(255)
+  timezone            String       @default("America/Bogota") @db.VarChar(64)
+  defaultPeriodPreset PeriodPreset @default(LAST_28_DAYS)
+  dataDelayDays       Int          @default(3)
+  defaultTemplateId   String?
+  defaultTemplate     Template?    @relation("DefaultTemplate", fields: [defaultTemplateId], references: [id], onDelete: SetNull)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@map("app_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Google OAuth / Search Console
+// ---------------------------------------------------------------------------
+
+model GoogleConnection {
+  id               String           @id @default(cuid())
+  /// Identificador estable de la cuenta Google (claim "sub").
+  googleAccountId  String           @unique @db.VarChar(64)
+  email            String?          @db.VarChar(320)
+  /// Tokens cifrados con AES-256-GCM (nunca en texto plano).
+  accessTokenEnc   String
+  refreshTokenEnc  String?
+  tokenExpiresAt   DateTime
+  scopes           String[]
+  status           ConnectionStatus @default(CONNECTED)
+  lastError        String?          @db.VarChar(500)
+  lastRefreshedAt  DateTime?
+  connectedAt      DateTime         @default(now())
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  properties       GoogleProperty[]
+
+  @@map("google_connections")
+}
+
+model GoogleProperty {
+  id              String           @id @default(cuid())
+  connectionId    String
+  connection      GoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  siteUrl         String           @db.VarChar(2048)
+  propertyType    PropertyType
+  permissionLevel String           @db.VarChar(40)
+  isAccessible    Boolean          @default(true)
+  lastSyncedAt    DateTime         @default(now())
+  lastVerifiedAt  DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  markets         Market[]
+
+  @@unique([connectionId, siteUrl])
+  @@index([siteUrl])
+  @@map("google_properties")
+}
+
+/// Estado OAuth de un solo uso (protección CSRF + PKCE).
+model OAuthState {
+  id              String   @id @default(cuid())
+  /// SHA-256 del parámetro state enviado a Google.
+  stateHash       String   @unique @db.VarChar(64)
+  /// Code verifier PKCE cifrado.
+  codeVerifierEnc String
+  /// Sesión del panel que inició el flujo (vinculación anti-CSRF).
+  sessionId       String   @db.VarChar(64)
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("oauth_states")
+}
+
+// ---------------------------------------------------------------------------
+// Plantillas y markets
+// ---------------------------------------------------------------------------
+
+model Template {
+  id                 String        @id @default(cuid())
+  name               String        @unique @db.VarChar(80)
+  description        String?       @db.VarChar(300)
+  /// La plantilla de sistema (seed) no se puede eliminar.
+  isSystem           Boolean       @default(false)
+  isDefault          Boolean       @default(false)
+  primaryColor       String        @db.Char(7)
+  secondaryColor     String        @db.Char(7)
+  backgroundColor    String        @db.Char(7)
+  textColor          String        @db.Char(7)
+  useMarketColors    Boolean       @default(true)
+  headingFont        String        @db.VarChar(40)
+  bodyFont           String        @db.VarChar(40)
+  baseFontSize       Float         @default(10)
+  /// Configuración de portada, secciones, gráficos, encabezado, pie y tablas (validada con Zod).
+  layout             Json
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  markets            Market[]
+  reports            Report[]
+  defaultForSettings AppSettings[] @relation("DefaultTemplate")
+
+  @@index([isDefault])
+  @@map("templates")
+}
+
+model Market {
+  id               String          @id @default(cuid())
+  name             String          @db.VarChar(80)
+  domain           String          @unique @db.VarChar(253)
+  description      String?         @db.VarChar(500)
+  logoPath         String?         @db.VarChar(255)
+  primaryColor     String          @db.Char(7)
+  secondaryColor   String          @db.Char(7)
+  status           MarketStatus    @default(ACTIVE)
+  /// URL de la propiedad GSC ("sc-domain:..." o "https://.../"). Se conserva aunque se desconecte Google.
+  gscSiteUrl       String?         @db.VarChar(2048)
+  googlePropertyId String?
+  googleProperty   GoogleProperty? @relation(fields: [googlePropertyId], references: [id], onDelete: SetNull)
+  templateId       String?
+  template         Template?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  reports          Report[]
+
+  @@index([status])
+  @@index([googlePropertyId])
+  @@index([templateId])
+  @@map("markets")
+}
+
+// ---------------------------------------------------------------------------
+// Reportes
+// ---------------------------------------------------------------------------
+
+model Report {
+  id               String                 @id @default(cuid())
+  marketId         String
+  market           Market                 @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  templateId       String?
+  template         Template?              @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  /// Copia de la configuración de plantilla usada (reproducibilidad aunque la plantilla cambie).
+  templateSnapshot Json?
+  templateName     String?                @db.VarChar(80)
+  periodPreset     PeriodPreset
+  /// Fechas solicitadas para periodos personalizados.
+  requestedStart   DateTime?              @db.Date
+  requestedEnd     DateTime?              @db.Date
+  startDate        DateTime               @db.Date
+  endDate          DateTime               @db.Date
+  compareStartDate DateTime               @db.Date
+  compareEndDate   DateTime               @db.Date
+  status           ReportStatus           @default(QUEUED)
+  stage            ReportStage            @default(QUEUED)
+  includeAi        Boolean                @default(true)
+  aiModel          String?                @db.VarChar(80)
+  errorCode        String?                @db.VarChar(64)
+  errorMessage     String?                @db.VarChar(1000)
+  fileName         String?                @db.VarChar(255)
+  /// Ruta relativa dentro del almacenamiento persistente.
+  filePath         String?                @db.VarChar(255)
+  fileSize         Int?
+  /// Dataset procesado (métricas de GSC) usado para generar el reporte.
+  metricsData      Json?
+  /// Resultado completo y validado del análisis IA.
+  aiAnalysis       Json?
+  /// Tiempos por etapa, peticiones, tokens, avisos, páginas del PDF…
+  generationMeta   Json?
+  cancelRequested  Boolean                @default(false)
+  requestedAt      DateTime               @default(now())
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  metrics          ReportMetric[]
+  insights         ReportInsight[]
+  recommendations  ReportRecommendation[]
+
+  @@index([marketId, createdAt(sort: Desc)])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("reports")
+}
+
+model ReportMetric {
+  id             String    @id @default(cuid())
+  reportId       String
+  report         Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  metric         MetricKey
+  currentValue   Float?
+  previousValue  Float?
+  absoluteChange Float?
+  percentChange  Float?
+
+  @@unique([reportId, metric])
+  @@map("report_metrics")
+}
+
+model ReportInsight {
+  id        String         @id @default(cuid())
+  reportId  String
+  report    Report         @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  section   InsightSection
+  content   Json
+  sortOrder Int            @default(0)
+
+  @@unique([reportId, section])
+  @@map("report_insights")
+}
+
+model ReportRecommendation {
+  id              String                 @id @default(cuid())
+  reportId        String
+  report          Report                 @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  priority        RecommendationPriority
+  title           String                 @db.VarChar(300)
+  problem         String
+  evidence        String
+  potentialImpact String
+  action          String
+  justification   String
+  relatedQueries  String[]
+  relatedPages    String[]
+  sortOrder       Int                    @default(0)
+
+  @@index([reportId, priority])
+  @@map("report_recommendations")
+}

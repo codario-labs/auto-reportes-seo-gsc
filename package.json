@@ -1,0 +1,38 @@
+{
+  "name": "seo-report-generator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Codario Labs — Generador de reportes SEO automatizados con Google Search Console y Anthropic.",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev:backend": "npm run dev -w @codario/backend",
+    "dev:frontend": "npm run dev -w @codario/frontend",
+    "build": "npm run build -w @codario/backend && npm run build -w @codario/frontend",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate -w @codario/backend",
+    "db:migrate": "npm run db:migrate -w @codario/backend",
+    "db:deploy": "npm run db:deploy -w @codario/backend",
+    "db:seed": "npm run db:seed -w @codario/backend",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.15.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.8",
+    "globals": "17.14.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.74.0"
+  }
+}

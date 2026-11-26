@@ -1,0 +1,107 @@
+name: codario-seo-reports
+
+x-backend-env: &backend-env
+  NODE_ENV: production
+  PORT: "4000"
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-codario}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-seo_reports}?schema=public
+  APP_URL: ${APP_URL:-http://localhost:8080}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+  APP_TIMEZONE: ${APP_TIMEZONE:-America/Bogota}
+  APP_ACCESS_KEY: ${APP_ACCESS_KEY:?Set APP_ACCESS_KEY in .env}
+  SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+  SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+  TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set TOKEN_ENCRYPTION_KEY in .env}
+  GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+  GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+  GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8080/api/integrations/google/callback}
+  GSC_MAX_ROWS_PER_DIMENSION: ${GSC_MAX_ROWS_PER_DIMENSION:-5000}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+  ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-high}
+  ANTHROPIC_MAX_OUTPUT_TOKENS: ${ANTHROPIC_MAX_OUTPUT_TOKENS:-64000}
+  ANTHROPIC_TIMEOUT_MS: ${ANTHROPIC_TIMEOUT_MS:-600000}
+  ANTHROPIC_MAX_RETRIES: ${ANTHROPIC_MAX_RETRIES:-3}
+  ANTHROPIC_ENABLE_FALLBACK: ${ANTHROPIC_ENABLE_FALLBACK:-true}
+  STORAGE_DIR: /data/storage
+  CODARIO_LOGO_PATH: ${CODARIO_LOGO_PATH:-}
+  REPORT_WORKER_CONCURRENCY: ${REPORT_WORKER_CONCURRENCY:-1}
+  REPORT_JOB_TIMEOUT_MS: ${REPORT_JOB_TIMEOUT_MS:-900000}
+  TRUST_PROXY: "1"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-codario}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-seo_reports}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Solo accesible desde la propia máquina (migraciones / Prisma Studio en desarrollo).
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Aplica migraciones Prisma pendientes y el seed idempotente; termina antes de arrancar el backend.
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    image: codario-seo-reports-backend:latest
+    command: ["sh", "-c", "npx prisma migrate deploy && node dist/seed.js"]
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    image: codario-seo-reports-backend:latest
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    restart: unless-stopped
+    environment: *backend-env
+    volumes:
+      - report_storage:/data/storage
+      - ./branding:/app/branding:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # Chromium (Playwright) necesita memoria compartida suficiente para renderizar PDFs.
+    shm_size: 512mb
+    init: true
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  report_storage:
