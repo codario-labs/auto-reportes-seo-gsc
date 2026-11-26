@@ -792,13 +792,14 @@ function footerTemplate(model: ReportRenderModel, p: Palette): string {
     ? `<img src="${escapeHtml(model.branding.logoDataUri)}" style="height:10px;width:auto;margin-right:7px"/>`
     : `<span style="font-weight:700;color:${p.text};margin-right:7px">${escapeHtml(model.branding.companyName)}</span>`;
   const text = f.enabled && f.text ? `<span>${escapeHtml(f.text)}</span>` : '';
-  const date = f.enabled && f.showGeneratedDate ? `<span>Generado el ${escapeHtml(generatedDateLabel(model))}</span>` : '<span></span>';
-  const pages =
-    f.enabled && f.showPageNumbers
-      ? `<span>Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>`
-      : '<span></span>';
-  return `<div style="width:100%;padding:0 16mm;font-family:Helvetica,Arial,sans-serif;font-size:7px;color:${p.muted};display:flex;align-items:center;justify-content:space-between;gap:10px;-webkit-print-color-adjust:exact;">
-<div style="display:flex;align-items:center;min-width:0">${brand}${text}</div>${date}${pages}</div>`;
+  const date = f.enabled && f.showGeneratedDate ? `Generado el ${escapeHtml(generatedDateLabel(model))}` : '';
+  const pages = f.enabled && f.showPageNumbers ? `Página <span class="pageNumber"></span> de <span class="totalPages"></span>` : '';
+  // Rejilla 1fr | auto | 1fr: la columna central queda centrada en la página
+  // aunque los bloques laterales tengan anchos distintos.
+  return `<div style="width:100%;box-sizing:border-box;padding:0 16mm;font-family:Helvetica,Arial,sans-serif;font-size:7px;color:${p.muted};display:grid;grid-template-columns:1fr auto 1fr;align-items:center;column-gap:12px;-webkit-print-color-adjust:exact;">
+<div style="display:flex;align-items:center;justify-self:start;min-width:0">${brand}${text}</div>
+<div style="justify-self:center;text-align:center;white-space:nowrap">${date}</div>
+<div style="justify-self:end;text-align:right;white-space:nowrap">${pages}</div></div>`;
 }
 
 // ---------------------------------------------------------------------------
