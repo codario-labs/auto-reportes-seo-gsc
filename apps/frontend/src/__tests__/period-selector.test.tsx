@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -26,18 +26,25 @@ const freshness = {
 };
 
 describe('PeriodSelector', () => {
+  // El primer render usa una estimación basada en la fecha real; se espera a la frescura de GSC (mock)
+  // para que el resultado no dependa del día en que se ejecutan los tests.
   it('shows the resolved range and its comparison period', async () => {
     mockApi({ ...baseHandlers(), 'GET /api/markets/mkt_1/freshness': { body: freshness } });
     renderWithProviders(<Harness initial={{ preset: 'LAST_28_DAYS' }} />);
-    const summary = await screen.findByTestId('period-summary');
-    expect(summary).toHaveTextContent('Oct 25 – Nov 21, 2026 vs. previous 28 days (Sep 27 – Oct 24, 2026)');
+    await waitFor(() =>
+      expect(screen.getByTestId('period-summary')).toHaveTextContent(
+        'Oct 25 – Nov 21, 2026 vs. previous 28 days (Sep 27 – Oct 24, 2026)',
+      ),
+    );
   });
 
   it('compares the current month with the same days of the previous month', async () => {
     mockApi({ ...baseHandlers(), 'GET /api/markets/mkt_1/freshness': { body: freshness } });
     renderWithProviders(<Harness initial={{ preset: 'CURRENT_MONTH' }} />);
-    expect(await screen.findByTestId('period-summary')).toHaveTextContent(
-      'Nov 1–21, 2026 vs. same days of previous month (Oct 1–21, 2026)',
+    await waitFor(() =>
+      expect(screen.getByTestId('period-summary')).toHaveTextContent(
+        'Nov 1–21, 2026 vs. same days of previous month (Oct 1–21, 2026)',
+      ),
     );
   });
 
