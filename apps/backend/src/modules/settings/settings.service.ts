@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Errors } from '../../lib/errors';
 import type { Logger } from '../../lib/logger';
 import { STORAGE_DIRS, type StorageService } from '../../lib/storage';
-import { assertSafeSvg, detectImage, validateLogoUpload, type UploadedFileLike } from '../../lib/uploads';
+import { assertSafeSvg, detectImage, sanitizeSvg, validateLogoUpload, type UploadedFileLike } from '../../lib/uploads';
 
 const SETTINGS_ID = 1;
 
@@ -71,10 +71,10 @@ export class SettingsService {
   }
 
   async setGlobalLogo(file: UploadedFileLike | undefined): Promise<SettingsDTO> {
-    const detected = validateLogoUpload(file);
+    const image = validateLogoUpload(file);
     const settings = await this.get();
-    const relative = path.posix.join(STORAGE_DIRS.branding, `codario-logo-${Date.now()}.${detected.ext}`);
-    await this.storage.write(relative, file!.buffer);
+    const relative = path.posix.join(STORAGE_DIRS.branding, `codario-logo-${Date.now()}.${image.ext}`);
+    await this.storage.write(relative, image.buffer);
     const updated = await this.prisma.appSettings.update({ where: { id: SETTINGS_ID }, data: { globalLogoPath: relative } });
     await this.storage.remove(settings.globalLogoPath).catch(() => undefined);
     return this.toDTO(updated);
@@ -111,7 +111,7 @@ export class SettingsService {
         const detected = detectImage(buffer);
         if (!detected) throw new Error('unsupported image format');
         if (detected.ext === 'svg') assertSafeSvg(buffer);
-        asset = { buffer, mime: detected.mime };
+        asset = { buffer: detected.ext === 'svg' ? sanitizeSvg(buffer) : buffer, mime: detected.mime };
       } catch (error) {
         this.logger.warn({ err: error, path: this.defaults.envLogoPath }, 'CODARIO_LOGO_PATH could not be loaded; using the text wordmark');
       }

@@ -36,13 +36,31 @@ export function detectImage(buffer: Buffer): DetectedImage | null {
   ) {
     return { ext: 'webp', mime: 'image/webp' };
   }
-  const text = buffer.subarray(0, 1024).toString('utf8');
-  const head = (text.startsWith(BOM) ? text.slice(1) : text).trimStart();
-  const withoutProlog = head.replace(/^<\?xml[^>]*\?>\s*/i, '').replace(/^(<!--[\s\S]*?-->\s*)+/, '');
-  if (/^<svg[\s>]/i.test(withoutProlog)) {
+  const text = buffer.subarray(0, 4096).toString('utf8');
+  if (/^<svg[\s>]/i.test(stripSvgPreamble(text))) {
     return { ext: 'svg', mime: 'image/svg+xml' };
   }
   return null;
+}
+
+/**
+ * DOCTYPE de SVG sin subconjunto interno, p. ej. el que exportan Affinity, Illustrator o Inkscape:
+ * `<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">`.
+ * Sin "[...]" no puede declarar entidades, y los navegadores no descargan DTD externos.
+ */
+const SIMPLE_SVG_DOCTYPE = /<!DOCTYPE\s+svg\b[^[>]*>/gi;
+
+/** Quita BOM, declaración XML, comentarios y DOCTYPE simple que preceden a <svg>. */
+function stripSvgPreamble(text: string): string {
+  let rest = (text.startsWith(BOM) ? text.slice(1) : text).trimStart();
+  for (;;) {
+    const next = rest
+      .replace(/^<\?xml[^>]*\?>\s*/i, '')
+      .replace(/^<!--[\s\S]*?-->\s*/, '')
+      .replace(/^<!DOCTYPE\s+svg\b[^[>]*>\s*/i, '');
+    if (next === rest) return rest;
+    rest = next;
+  }
 }
 
 const SVG_FORBIDDEN_PATTERNS: Array<[RegExp, string]> = [
@@ -51,11 +69,19 @@ const SVG_FORBIDDEN_PATTERNS: Array<[RegExp, string]> = [
   [/javascript\s*:/i, 'javascript: URLs'],
   [/<foreignObject[\s>]/i, 'foreignObject elements'],
   [/<(iframe|embed|object|audio|video)[\s>]/i, 'embedded content'],
-  [/<!(DOCTYPE|ENTITY)/i, 'DTD / entity declarations'],
+  // Entidades (XXE / "billion laughs") y DTD con subconjunto interno o que no son de SVG.
+  [/<!ENTITY/i, 'entity declarations'],
+  [/<!DOCTYPE[^>]*\[/i, 'DTD internal subsets'],
+  [/<!DOCTYPE(?!\s+svg\b)/i, 'non-SVG DOCTYPE declarations'],
   [/(href|src)\s*=\s*["']\s*(https?:|\/\/|file:)/i, 'external references'],
   [/url\(\s*["']?\s*(https?:|\/\/|file:)/i, 'external CSS references'],
   [/@import/i, 'CSS imports'],
 ];
+
+/** Elimina el DOCTYPE (innecesario para renderizar) antes de guardar o incrustar el SVG. */
+export function sanitizeSvg(buffer: Buffer): Buffer {
+  return Buffer.from(buffer.toString('utf8').replace(SIMPLE_SVG_DOCTYPE, ''), 'utf8');
+}
 
 /** Rechaza SVG con contenido activo o referencias externas (XSS / SSRF al renderizar el PDF). */
 export function assertSafeSvg(buffer: Buffer): void {
@@ -74,8 +100,13 @@ export interface UploadedFileLike {
   originalname?: string;
 }
 
+export interface ValidatedImage extends DetectedImage {
+  /** Contenido listo para guardar (los SVG se devuelven saneados). */
+  buffer: Buffer;
+}
+
 /** Valida tamaño, tipo declarado y tipo real de un logo subido. */
-export function validateLogoUpload(file: UploadedFileLike | undefined): DetectedImage {
+export function validateLogoUpload(file: UploadedFileLike | undefined): ValidatedImage {
   if (!file) {
     throw Errors.validation([{ path: 'file', message: 'Attach an image file in the "file" field.' }], 'No file uploaded.');
   }
@@ -93,8 +124,11 @@ export function validateLogoUpload(file: UploadedFileLike | undefined): Detected
   if (declared !== detected.mime) {
     throw Errors.unsupportedMedia('The file type does not match its content.');
   }
-  if (detected.ext === 'svg') assertSafeSvg(file.buffer);
-  return detected;
+  if (detected.ext === 'svg') {
+    assertSafeSvg(file.buffer);
+    return { ...detected, buffer: sanitizeSvg(file.buffer) };
+  }
+  return { ...detected, buffer: file.buffer };
 }
 
 export function mimeFromExtension(fileName: string): string {

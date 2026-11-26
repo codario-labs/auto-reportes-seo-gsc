@@ -153,9 +153,9 @@ export class MarketsService {
 
   async setLogo(id: string, file: UploadedFileLike | undefined): Promise<MarketDTO> {
     const market = await this.getRow(id);
-    const detected = validateLogoUpload(file);
-    const relative = path.posix.join(STORAGE_DIRS.logos, `${id}-${randomToken(8)}.${detected.ext}`);
-    await this.storage.write(relative, file!.buffer);
+    const image = validateLogoUpload(file);
+    const relative = path.posix.join(STORAGE_DIRS.logos, `${id}-${randomToken(8)}.${image.ext}`);
+    await this.storage.write(relative, image.buffer);
     await this.prisma.market.update({ where: { id }, data: { logoPath: relative } });
     await this.storage.remove(market.logoPath).catch(() => undefined);
     return this.get(id);

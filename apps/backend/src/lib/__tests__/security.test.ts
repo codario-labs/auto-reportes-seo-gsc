@@ -83,8 +83,28 @@ describe('uploads', () => {
     expect(() => assertSafeSvg(Buffer.from('<svg><script>alert(1)</script></svg>'))).toThrow(/scripts/);
     expect(() => assertSafeSvg(Buffer.from('<svg onload="x()"></svg>'))).toThrow(/event handlers/);
     expect(() => assertSafeSvg(Buffer.from('<svg><image href="https://evil.com/a.png"/></svg>'))).toThrow(/external/);
-    expect(() => assertSafeSvg(Buffer.from('<!DOCTYPE svg [<!ENTITY x "y">]><svg/>'))).toThrow(/DTD/);
+    expect(() => assertSafeSvg(Buffer.from('<!DOCTYPE svg [<!ENTITY x "y">]><svg/>'))).toThrow(/entity/);
+    expect(() => assertSafeSvg(Buffer.from('<!DOCTYPE svg [ <!ATTLIST svg a CDATA "b"> ]><svg/>'))).toThrow(/internal subsets/);
+    expect(() => assertSafeSvg(Buffer.from('<!DOCTYPE html><svg/>'))).toThrow(/non-SVG DOCTYPE/);
     expect(() => assertSafeSvg(svg)).not.toThrow();
+  });
+
+  it('accepts SVG exported with the standard SVG 1.1 DOCTYPE (Affinity, Illustrator, Inkscape) and strips it', () => {
+    const exported = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' +
+        '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n' +
+        '<svg width="100%" height="100%" viewBox="0 0 1415 213" version="1.1" xmlns="http://www.w3.org/2000/svg" ' +
+        'xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:affinity="https://www.affinity.studio/">' +
+        '<path d="M0,0L10,10" style="fill:url(#_Linear1)"/><defs><linearGradient id="_Linear1"/></defs></svg>',
+    );
+    expect(detectImage(exported)?.ext).toBe('svg');
+    expect(() => assertSafeSvg(exported)).not.toThrow();
+    const result = validateLogoUpload({ buffer: exported, mimetype: 'image/svg+xml', size: exported.length });
+    expect(result.ext).toBe('svg');
+    const stored = result.buffer.toString('utf8');
+    expect(stored).not.toContain('DOCTYPE');
+    expect(stored).toContain('<?xml version="1.0"');
+    expect(stored).toContain('viewBox="0 0 1415 213"');
   });
 
   it('validates MIME, content and size', () => {
