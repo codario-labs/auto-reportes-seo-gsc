@@ -14,7 +14,7 @@ import { createContainer, type Container } from '../container';
 import { createPrismaClient } from '../lib/prisma';
 import { AnthropicService } from '../modules/ai/anthropic.service';
 import { configToColumns, SYSTEM_TEMPLATE_NAME } from '../modules/templates/templates.service';
-import { createFakeAnthropic, fakeMessage, sampleAnalysis } from '../test/fake-anthropic';
+import { createFakeAnthropic, partAwareResponder, sampleAnalysis } from '../test/fake-anthropic';
 import { createFakeGoogle, type FakeGoogle } from '../test/fake-google';
 
 const databaseUrl = inject('testDatabaseUrl');
@@ -75,7 +75,7 @@ describe.skipIf(!databaseUrl)('API integration (PostgreSQL + Chromium, simulated
     });
     const logger = pino({ level: 'silent' });
     google = createFakeGoogle({ firstIncompleteDate: addDays(todayInTimeZone('America/Bogota'), -2) });
-    const fakeAnthropic = createFakeAnthropic([fakeMessage(JSON.stringify(sampleAnalysis()))]);
+    const fakeAnthropic = createFakeAnthropic(partAwareResponder(sampleAnalysis()));
     anthropicCalls = fakeAnthropic.calls;
     const anthropic = new AnthropicService(
       { apiKey: 'test-key', model: 'claude-opus-5-5', effort: 'high', maxOutputTokens: 64_000, timeoutMs: 60_000, maxRetries: 0, enableFallback: true },

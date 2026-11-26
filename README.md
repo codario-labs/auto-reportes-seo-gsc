@@ -180,7 +180,7 @@ La cuenta conectada debe tener acceso (*Owner*, *Full* o *Restricted user*) a la
    ```
 3. `docker compose up -d`. *Integrations* mostrará Anthropic como configurado.
 
-La clave solo existe en el backend; nunca se envía al navegador. Cada análisis envía un dataset compacto (tablas columnares con las consultas/páginas relevantes, no millones de filas): típicamente 8–20 k tokens de entrada y 3–8 k de salida. Con `claude-opus-5-5` ($4 / $20 por millón de tokens de entrada/salida) un reporte cuesta del orden de **0,10–0,25 USD**. El consumo real (tokens, modelo que respondió, duración) se guarda en cada reporte (*Report → Generation*). Puedes generar reportes sin IA desactivando *Include AI analysis*.
+La clave solo existe en el backend; nunca se envía al navegador. Cada análisis envía un dataset compacto (tablas columnares con las consultas/páginas relevantes, no millones de filas) en **tres peticiones** (diagnóstico, hallazgos y plan de acción), porque el esquema completo supera el tamaño máximo de las salidas estructuradas de la API. Medido con un reporte real con `claude-opus-5-5` ($4 / $20 por millón de tokens de entrada/salida) y `ANTHROPIC_EFFORT=high`: ~28 k tokens de entrada y ~20 k de salida (incluido el razonamiento), del orden de **0,50 USD por reporte** y ~2 minutos. Con `ANTHROPIC_EFFORT=medium` el coste y el tiempo bajan. El consumo real (tokens, modelo que respondió, duración) se guarda en cada reporte (*Report → Generation*). Puedes generar reportes sin IA desactivando *Include AI analysis*.
 
 ## Variables de entorno
 

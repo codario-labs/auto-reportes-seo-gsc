@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { resolvePeriod, type ReportDataset } from '@codario/shared';
+import { aiAnalysisSchema, resolvePeriod, type ReportDataset } from '@codario/shared';
 import { pino } from 'pino';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createFakeAnthropic, fakeMessage, sampleAnalysis } from '../../../test/fake-anthropic';
+import { createFakeAnthropic, fakeMessage, partAwareResponder, requestedKeys, sampleAnalysis } from '../../../test/fake-anthropic';
 import { createFakeGoogle } from '../../../test/fake-google';
 import { buildDataset } from '../../analytics/dataset.builder';
 import { SearchConsoleClient } from '../../gsc/gsc.client';
@@ -66,34 +66,58 @@ describe('AnthropicService', () => {
     await expect(service.analyze(dataset, context)).rejects.toMatchObject({ code: 'INTEGRATION_NOT_CONFIGURED' });
   });
 
-  it('requests structured output with streaming, effort and server-side fallback', async () => {
-    const fake = createFakeAnthropic([fakeMessage(JSON.stringify(sampleAnalysis()))]);
+  it('splits the analysis into three structured requests that cover the whole schema', async () => {
+    const fake = createFakeAnthropic(partAwareResponder(sampleAnalysis()));
     const service = new AnthropicService(config, logger, fake.client);
     const result = await service.analyze(dataset, context);
     expect(result.analysis.executiveSummary.overallStatus).toBe('positive');
-    expect(result.meta.inputTokens).toBe(4200);
+    expect(result.analysis.recommendations).toHaveLength(1);
+    expect(result.meta.requests).toBe(3);
+    expect(result.meta.inputTokens).toBe(3 * 4200);
     expect(result.meta.groundingWarnings.length).toBeGreaterThan(0);
-    const params = fake.calls[0]!.params as {
+
+    expect(fake.calls).toHaveLength(3);
+    const keysPerCall = fake.calls.map((c) => requestedKeys(c.params).sort());
+    expect(keysPerCall[0]).toEqual(['dataLimitations', 'executiveSummary', 'performanceAnalysis']);
+    expect(keysPerCall[1]).toEqual(['ctrOpportunities', 'keywordAnalysis', 'pageAnalysis']);
+    expect(keysPerCall[2]).toEqual(['conclusions', 'opportunities', 'recommendations']);
+    // Las tres partes cubren exactamente el esquema completo, sin solaparse.
+    expect(keysPerCall.flat().sort()).toEqual(Object.keys(aiAnalysisSchema.shape).sort());
+
+    type Params = {
       model: string;
       output_config: { effort: string; format: { type: string; schema: { type: string } } };
       betas: string[];
       fallbacks: string;
       system: string;
+      messages: Array<{ content: Array<{ type: string; text: string }> }>;
     };
-    expect(params.model).toBe('claude-opus-5-5');
-    expect(params.output_config.effort).toBe('high');
-    expect(params.output_config.format.type).toBe('json_schema');
-    expect(params.output_config.format.schema.type).toBe('object');
-    expect(params.betas).toContain('server-side-fallback-2026-07-01');
-    expect(params.fallbacks).toBe('default');
-    expect(params.system).toContain('No tienes acceso al contenido de las páginas');
+    const params = fake.calls.map((c) => c.params as unknown as Params);
+    for (const p of params) {
+      expect(p.model).toBe('claude-opus-5-5');
+      expect(p.output_config.effort).toBe('high');
+      expect(p.output_config.format.type).toBe('json_schema');
+      expect(p.output_config.format.schema.type).toBe('object');
+      expect(p.betas).toContain('server-side-fallback-2026-07-01');
+      expect(p.fallbacks).toBe('default');
+      expect(p.system).toContain('No tienes acceso al contenido de las páginas');
+    }
+    // Las tres partes analizan el mismo dataset.
+    const datasetBlocks = params.map((p) => p.messages[0]!.content[0]!);
+    expect(new Set(datasetBlocks.map((b) => b.text)).size).toBe(1);
+    expect(datasetBlocks[0]!.text).toContain('<dataset_gsc>');
+    // El plan de acción recibe el diagnóstico y los hallazgos.
+    expect(params[2]!.messages[0]!.content[1]!.text).toContain('<analisis_previo>');
+    expect(params[2]!.messages[0]!.content[1]!.text).toContain('Los clics crecieron');
+    expect(params[0]!.messages[0]!.content[1]!.text).not.toContain('<analisis_previo>');
   });
 
-  it('retries once when the response does not match the schema', async () => {
-    const fake = createFakeAnthropic([fakeMessage('{"invalid": true}'), fakeMessage(JSON.stringify(sampleAnalysis()))]);
+  it('retries a part once when its response does not match the schema', async () => {
+    const valid = partAwareResponder(sampleAnalysis());
+    const fake = createFakeAnthropic((params, index) => (index === 0 ? fakeMessage('{"invalid": true}') : valid(params, index)));
     const result = await new AnthropicService(config, logger, fake.client).analyze(dataset, context);
-    expect(result.meta.attempts).toBe(2);
-    expect(fake.calls).toHaveLength(2);
+    expect(result.meta.attempts).toBe(4);
+    expect(fake.calls).toHaveLength(4);
   });
 
   it('fails clearly after repeated invalid responses', async () => {
@@ -119,7 +143,7 @@ describe('AnthropicService', () => {
   });
 
   it('omits the fallback beta when disabled', async () => {
-    const fake = createFakeAnthropic([fakeMessage(JSON.stringify(sampleAnalysis()))]);
+    const fake = createFakeAnthropic(partAwareResponder(sampleAnalysis()));
     await new AnthropicService({ ...config, enableFallback: false }, logger, fake.client).analyze(dataset, context);
     expect(fake.calls[0]!.params).not.toHaveProperty('fallbacks');
   });

@@ -133,4 +133,10 @@ export interface AiAnalysisMeta {
   /** Referencias a consultas/páginas que no existen en el dataset y fueron eliminadas. */
   groundingWarnings: string[];
   generatedAt: string;
+  /** Peticiones realizadas a la API (el análisis se divide en partes). */
+  requests?: number;
+  /** Tokens de entrada servidos desde la caché de prompts. */
+  cacheReadInputTokens?: number;
+  /** Tokens de entrada escritos en la caché de prompts. */
+  cacheCreationInputTokens?: number;
 }

@@ -23,7 +23,25 @@ export function fakeMessage(text: string, overrides: Partial<Record<string, unkn
   };
 }
 
-export function createFakeAnthropic(responses: Array<ReturnType<typeof fakeMessage> | Error>): {
+type FakeResponse = ReturnType<typeof fakeMessage> | Error;
+type FakeResponder = (params: Record<string, unknown>, index: number) => FakeResponse;
+
+/** Claves de nivel superior del JSON Schema solicitado (identifican la parte del análisis). */
+export function requestedKeys(params: Record<string, unknown>): string[] {
+  const format = (params.output_config as { format?: { schema?: { properties?: Record<string, unknown> } } } | undefined)?.format;
+  return Object.keys(format?.schema?.properties ?? {});
+}
+
+/** Responde a cada parte solo con las secciones que pide su esquema. */
+export function partAwareResponder(analysis: AiAnalysis): FakeResponder {
+  return (params) => {
+    const keys = requestedKeys(params);
+    const subset = Object.fromEntries(keys.map((k) => [k, analysis[k as keyof AiAnalysis]]));
+    return fakeMessage(JSON.stringify(subset));
+  };
+}
+
+export function createFakeAnthropic(responses: FakeResponse[] | FakeResponder): {
   client: Anthropic;
   calls: FakeAnthropicCall[];
 } {
@@ -34,7 +52,7 @@ export function createFakeAnthropic(responses: Array<ReturnType<typeof fakeMessa
       messages: {
         stream: (params: Record<string, unknown>) => {
           calls.push({ params });
-          const response = responses[Math.min(index, responses.length - 1)];
+          const response = typeof responses === 'function' ? responses(params, index) : responses[Math.min(index, responses.length - 1)];
           index += 1;
           return {
             finalMessage: async () => {

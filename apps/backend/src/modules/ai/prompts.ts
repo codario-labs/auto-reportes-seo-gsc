@@ -25,12 +25,26 @@ Qué escribir:
 - conclusions: conclusión profesional y hoja de ruta por horizontes (immediate, short_term, medium_term).
 - dataLimitations: limitaciones reales de estos datos que condicionan las conclusiones.`;
 
-export function buildUserPrompt(payloadJson: string): string {
-  return `Analiza el siguiente dataset de Google Search Console y devuelve el análisis con el esquema JSON indicado.
+/** Bloque con el dataset (idéntico en todas las partes del análisis). */
+export function buildDatasetBlock(payloadJson: string): string {
+  return `Dataset de Google Search Console del periodo analizado:
 
 <dataset_gsc>
 ${payloadJson}
-</dataset_gsc>
+</dataset_gsc>`;
+}
 
-Recuerda: solo cifras, consultas y URLs presentes en el dataset; hechos separados de hipótesis; español profesional.`;
+/** Instrucción específica de cada parte (va después del bloque cacheado). */
+export function buildPartInstruction(sections: string, focus: string, previousAnalysis?: string): string {
+  const previous = previousAnalysis
+    ? `
+
+Diagnóstico y hallazgos ya redactados para este mismo informe (no los repitas literalmente ni los contradigas; úsalos como base):
+<analisis_previo>
+${previousAnalysis}
+</analisis_previo>`
+    : '';
+  return `Redacta ahora únicamente estas secciones del informe: ${sections}. ${focus}${previous}
+
+Devuelve el resultado con el esquema JSON indicado. Recuerda: solo cifras, consultas y URLs presentes en el dataset; hechos separados de hipótesis; español profesional.`;
 }
